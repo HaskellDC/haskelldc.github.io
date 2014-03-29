@@ -322,12 +322,6 @@ var slides = [
     "cloc": "universesmodule"
   },
   {
-    "time": (1*60 + 13)*60 + 58,
-    "name": "universes",
-    "type": "pdf",
-    "page": 42
-  },
-  {
     "time": (1*60 + 22)*60 + 44,
     "name": "well-typed-interpreter",
     "type": "pdf",
