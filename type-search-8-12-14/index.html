@@ -29,6 +29,10 @@ p {
   margin-left: auto;
   margin-right: auto;
 }
+.wrapper {
+  margin-left: auto;
+  margin-right: auto;
+}
 </style>
 <style type="text/css">
 <!--
@@ -58,7 +62,7 @@ pre * { font-size: 1em; }
 
 <p class="spaced"> In the first part of the talk, I discuss how programming languages vary in terms of what can be ascertained statically about their programs, particularly in regards to type systems. When type systems are powerful, as they are in Idris, I prefer type-driven development to test-driven development. I demonstrate that the property <code> map f . map g = map (f . g) </code> is false for ML but prove its veracity for Haskell by hand.</p>
 
-<div style="margin-left:auto; margin-right:auto">
+<div class="wrapper">
     <!-- 1. The <iframe> (and video player) will replace this <div> tag. -->
     <div id="player"></div>
 
@@ -214,9 +218,9 @@ pre * { font-size: 1em; }
 </div>
 </div>
 
-
 <p class="spaced"> In the second part of the talk, I construct a term in Idris which bears witness to the fact that<code> map f . map g = map (f . g) </code> is true in Idris. I demonstrate the :search feature in Idris and explain how it works. I also discuss some strategies I employed and issues I faced when developing :search, and ways in which :search can be improved in the future.</p>
 
+<div class="wrapper">
     <!-- 1. The <iframe> (and video player) will replace this <div> tag. -->
     <div id="player2"></div>
 
@@ -630,6 +634,7 @@ Idris&gt; :s (Ord a, Ord b) =&gt; (a, b) -&gt; (a, b) -&gt; Bool
 
 <embed id="pdf2" src="slides/type-search.1.pdf" width="640" height="480" style="display: none;">
 
+</div>
 </div>
 
 <p style="text-align: center;" class="spaced"><a href="slides/type-search.pdf">View slides in full (PDF)</a>.</p>
