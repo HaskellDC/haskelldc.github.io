@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html>
+  <head>
+  <title>Type-directed search with dependent types - Ben Sherman</title>
+  <script src="slides.js"></script>
+<style type="text/css">
+#slides, #slides2 {
+  width: 640px;
+  height: 480px;
+  overflow: scroll;
+}
+#slides, #slides2 > * {
+  margin: 0;
+}
+#player, #player2 {
+  float: left;
+}
+.spaced {
+  margin-top: 5em;
+  margin-bottom: 5em;
+}
+h1, h3, h4 {
+  font-family: serif;
+  text-align: center;
+}
+p {
+  font-family: serif;
+  max-width: 45em;
+  margin-left: auto;
+  margin-right: auto;
+}
+</style>
+<style type="text/css">
+<!--
+pre { white-space: pre-wrap; font-family: monospace; color: #7f7f7f; background-color: #1a1a1a; margin: 0; }
+pre * { font-size: 1em; }
+.Special { color: #8a2be2; }
+.LineNr { color: #552a7b; background-color: #0d0d0d; padding-bottom: 1px; }
+.Statement { color: #9b30ff; font-weight: bold; }
+.PreProc { color: #1874cd; }
+.Type { color: #008b8b; font-weight: bold; }
+-->
+</style>
+  </head>
+  <body>
+
+    <h1>Type-directed search with dependent types</h1>
+    <h3>Ben Sherman</h3>
+    <h4>August 12, 2014</h4>
+
+<p>Types have the potential to be, all at once, specifications, documentation, and proofs of correctness. Because Haskell's got a powerful type system, <a href="http://hoogle.haskell.org">Hoogle</a>, a tool for finding terms by approximate type signature, proves rather valuable. But in a dependently typed language, types reach their pinnacle. The combined variety and precision of types in such languages means that type-directed search is a really enticing proposition.</p>
+
+<p>So I decided to create such a type-directed search! I wrote the :search function for <a href="http://www.idris-lang.org">Idris</a>, a dependently typed programming language inspired by Haskell. I took an approach guided by type isomorphism (which is somewhat different from Hoogle): when :search matches two types, one can be constructed from the other.</p>
+
+<p>This is a talk which I gave at the <a href="http://www.meetup.com/Haskell-DC/">Haskell DC meetup in Washington, D.C</a> on August 12, 2014.</p>
+
+<hr style="max-width: 45em;">
+
+<p class="spaced"> In the first part of the talk, I discuss how programming languages vary in terms of what can be ascertained statically about their programs, particularly in regards to type systems. When type systems are powerful, as they are in Idris, I prefer type-driven development to test-driven development. I demonstrate that the property <code> map f . map g = map (f . g) </code> is false for ML but prove its veracity for Haskell by hand.</p>
+
+    <!-- 1. The <iframe> (and video player) will replace this <div> tag. -->
+    <div id="player"></div>
+
+    <script>
+      // 2. This code loads the IFrame Player API code asynchronously.
+      var tag = document.createElement('script');
+
+      tag.src = "https://www.youtube.com/iframe_api";
+      var firstScriptTag = document.getElementsByTagName('script')[0];
+      firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+
+      // 3. This function creates an <iframe> (and YouTube player)
+      //    after the API code downloads.
+      var player;
+      var player2;
+      function onYouTubeIframeAPIReady() {
+        player = new YT.Player('player', {
+          height: '480',
+          width: '640',
+          videoId: 'SuonMqk9sns',
+          events: {
+            'onReady': onPlayerReady,
+            'onStateChange': onPlayerStateChange
+          }
+	});
+        player2 = new YT.Player('player2', {
+          height: '480',
+          width: '640',
+          videoId: 'HM7-yVEnjxs',
+          events: {
+            'onReady': onPlayerReady,
+            'onStateChange': onPlayerStateChange2
+          }
+        });
+      }
+
+      // 4. The API will call this function when the video player is ready.
+      function onPlayerReady(event) {
+        //event.target.playVideo();
+      }
+
+      // 5. The API calls this function when the player's state changes.
+      //    The function indicates that when playing a video (state=1),
+      //    the player should play for six seconds and then stop.
+      var done = false;
+      function onPlayerStateChange(event) {
+        if (/*event.data == YT.PlayerState.PLAYING &&*/ !done) {
+          stopVideo();
+          //setTimeout(stopVideo, 1000);
+          //done = true;
+        }
+      }
+      function stopVideo() {
+        setByTime(0, player.getCurrentTime());
+        done = false;
+        if (player.getPlayerState() == 1) {
+          setTimeout(stopVideo, 1000);
+        }
+      }
+
+      // 5. The API calls this function when the player's state changes.
+      //    The function indicates that when playing a video (state=1),
+      //    the player should play for six seconds and then stop.
+      var done2 = false;
+      function onPlayerStateChange2(event) {
+        if (/*event.data == YT.PlayerState.PLAYING &&*/ !done2) {
+          stopVideo2();
+          //setTimeout(stopVideo, 1000);
+          //done2 = true;
+        }
+      }
+      function stopVideo2() {
+        setByTime(1, player2.getCurrentTime());
+        done2 = false;
+        if (player2.getPlayerState() == 1) {
+          setTimeout(stopVideo2, 1000);
+        }
+      }
+    </script>
+
+<div id="slides">
+
+<div id="MapML" style="display: none;">
+<pre id='vimCodeElement'>
+<a name="mlmodule"></a><span class="LineNr"> 1 </span><span class="PreProc">import</span> Control.Monad ((&lt;=&lt;))
+<span class="LineNr"> 2 </span><span class="PreProc">import</span> System.IO (withFile, IOMode (ReadMode), hGetChar, Handle)
+<span class="LineNr"> 3 </span>
+<span class="LineNr"> 4 </span><span class="Comment">-- (&lt;=&lt;) is a &quot;monadic&quot; version of function composition</span>
+<span class="LineNr"> 5 </span><span class="Comment">-- (&lt;=&lt;) :: Monad m =&gt; (b -&gt; m c) -&gt; (a -&gt; m b) -&gt; (a -&gt; m c)</span>
+<span class="LineNr"> 6 </span>
+<span class="LineNr"> 7 </span>main <span class="Statement">::</span> IO ()
+<span class="LineNr"> 8 </span>main <span class="Statement">=</span> <span class="Statement">do</span>
+<span class="LineNr"> 9 </span>  putStrLn <span class="Constant">&quot;read1:&quot;</span>
+<span class="LineNr">10 </span>  f read1
+<span class="LineNr">11 </span>  putStrLn <span class="Constant">&quot;read2:&quot;</span>
+<span class="LineNr">12 </span>  f read2
+<span class="LineNr">13 </span>  <span class="Type">where</span>
+<span class="LineNr">14 </span>  f reader <span class="Statement">=</span> withFile <span class="Constant">&quot;haskell.txt&quot;</span> ReadMode <span class="Statement">$</span> <span class="Statement">\</span>h <span class="Statement">-&gt;</span> <span class="Statement">do</span>
+<span class="LineNr">15 </span>    xs <span class="Statement">&lt;-</span> reader h [<span class="Constant">1</span><span class="Statement">..</span><span class="Constant">30</span>]
+<span class="LineNr">16 </span>    putStrLn xs
+<span class="LineNr">17 </span>
+<span class="LineNr">18 </span>
+<span class="LineNr">19 </span><span class="Comment">-- map f . map f</span>
+<span class="LineNr">20 </span>read1 <span class="Statement">::</span> Handle <span class="Statement">-&gt;</span> [a] <span class="Statement">-&gt;</span> IO String
+<span class="LineNr">21 </span>read1 h <span class="Statement">=</span> mapM (get <span class="Statement">&lt;=&lt;</span> get) <span class="Type">where</span>
+<span class="LineNr">22 </span>  get <span class="Statement">=</span> const (hGetChar h)
+<span class="LineNr">23 </span>
+<span class="LineNr">24 </span><span class="Comment">-- map (f . f)</span>
+<span class="LineNr">25 </span>read2 <span class="Statement">::</span> Handle <span class="Statement">-&gt;</span> [a] <span class="Statement">-&gt;</span> IO String
+<span class="LineNr">26 </span>read2 h <span class="Statement">=</span> mapM get <span class="Statement">&lt;=&lt;</span> mapM get
+<span class="LineNr">27 </span>  <span class="Type">where</span> get <span class="Statement">=</span> const (hGetChar h)
+</pre>
+</div>
+
+<div id="MapHS" style="display: none;">
+<pre id='vimCodeElement'>
+<a name="hsdefinitions"></a><span class="LineNr"> 1 </span>map <span class="Statement">::</span> (a <span class="Statement">-&gt;</span> b) <span class="Statement">-&gt;</span> [a] <span class="Statement">-&gt;</span> [b]
+<span class="LineNr"> 2 </span>map f [] <span class="Statement">=</span> []
+<span class="LineNr"> 3 </span>map f (x <span class="Statement">:</span> xs) <span class="Statement">=</span> f x <span class="Statement">:</span> map f xs
+<span class="LineNr"> 4 </span>
+<span class="LineNr"> 5 </span>(<span class="Statement">.</span>) <span class="Statement">::</span> (b <span class="Statement">-&gt;</span> c) <span class="Statement">-&gt;</span> (a <span class="Statement">-&gt;</span> b) <span class="Statement">-&gt;</span> (a <span class="Statement">-&gt;</span> c)
+<span class="LineNr"> 6 </span>(<span class="Statement">.</span>) f g x <span class="Statement">=</span> f (g x)
+<span class="LineNr"> 7 </span>
+<span class="LineNr"> 8 </span>
+<span class="LineNr"> 9 </span><span class="Statement">===============================</span>
+<span class="LineNr">10 </span>
+<span class="LineNr">11 </span>(map f <span class="Statement">.</span> map g) []
+<span class="LineNr">12 </span>(<span class="Statement">.</span>) (map f) (map g) []
+<span class="LineNr">13 </span>(map f) (map g [])
+<span class="LineNr">14 </span>map f []
+<span class="LineNr">15 </span>[]
+<span class="LineNr">16 </span>
+<span class="LineNr">17 </span>map (f <span class="Statement">.</span> g) []
+<span class="LineNr">18 </span>[]
+<span class="LineNr">19 </span>
+<span class="LineNr">20 </span><span class="Statement">===============================</span>
+<span class="LineNr">21 </span>
+<span class="LineNr">22 </span>(map f <span class="Statement">.</span> map g) (x <span class="Statement">:</span> xs)
+<span class="LineNr">23 </span>(<span class="Statement">.</span>) (map f) (map g) (x <span class="Statement">:</span> xs)
+<span class="LineNr">24 </span>(map f) (map g (x <span class="Statement">:</span> xs))
+<span class="LineNr">25 </span>map f (g x <span class="Statement">:</span> map g xs)
+<span class="LineNr">26 </span>f (g x) <span class="Statement">:</span> map f (map g xs)
+<span class="LineNr">27 </span>
+<span class="LineNr">28 </span>
+<span class="LineNr">29 </span>map (f <span class="Statement">.</span> g) (x <span class="Statement">:</span> xs)
+<span class="LineNr">30 </span>(f <span class="Statement">.</span> g) x <span class="Statement">:</span> map (f <span class="Statement">.</span> g) xs
+<span class="LineNr">31 </span>f (g x) <span class="Statement">:</span> map (f <span class="Statement">.</span> g) xs
+<span class="LineNr">32 </span>
+</pre>
+</div>
+
+<embed id="pdf" src="slides/type-search.1.pdf" width="640" height="480">
+</div>
+
+
+<p class="spaced"> In the second part of the talk, I construct a term in Idris which bears witness to the fact that<code> map f . map g = map (f . g) </code> is true in Idris. I demonstrate the :search feature in Idris and explain how it works. I also discuss some strategies I employed and issues I faced when developing :search, and ways in which :search can be improved in the future.</p>
+
+    <!-- 1. The <iframe> (and video player) will replace this <div> tag. -->
+    <div id="player2"></div>
+
+
+<div id="slides2">
+<div id="MapIdris">
+<pre id='vimCodeElement'>
+<a name="eqList"></a><span class="LineNr"> 1 </span><span class="Identifier">eqList</span> <span class="Statement">:</span> <span class="Special">{</span>a <span class="Statement">:</span> <span class="PreProc">Type</span><span class="Special">}</span> <span class="Statement">-&gt;</span> <span class="Special">{</span>x<span class="Special">,</span> y <span class="Statement">:</span> a<span class="Special">}</span> <span class="Statement">-&gt;</span> <span class="Special">{</span>xs<span class="Special">,</span> ys <span class="Statement">:</span> <span class="PreProc">List</span> a<span class="Special">}</span>
+<span class="LineNr"> 2 </span>  <span class="Statement">-&gt;</span> x <span class="Statement">=</span> y <span class="Statement">-&gt;</span> xs <span class="Statement">=</span> ys <span class="Statement">-&gt;</span> x <span class="Statement">::</span> xs <span class="Statement">=</span> y <span class="Statement">::</span> ys
+<span class="LineNr"> 3 </span>eqList <span class="Special">{</span>x<span class="Special">}</span> <span class="Special">{</span>y<span class="Special">}</span> <span class="Special">{</span>xs<span class="Special">}</span> <span class="Special">{</span>ys<span class="Special">}</span> p q <span class="Statement">=</span> replace <span class="Special">{</span><span class="PreProc">P</span><span class="Statement">=\</span>ts <span class="Statement">=&gt;</span> x <span class="Statement">::</span> xs <span class="Statement">=</span> y <span class="Statement">::</span> ts<span class="Special">}</span> q
+<span class="LineNr"> 4 </span>  <span class="Special">(</span>replace <span class="Special">{</span><span class="PreProc">P</span><span class="Statement">=\</span>t <span class="Statement">=&gt;</span> x <span class="Statement">::</span> xs <span class="Statement">=</span> t <span class="Statement">::</span> xs<span class="Special">}</span> p <span class="Special">(</span><span class="PreProc">refl</span> <span class="Special">{</span>x <span class="Statement">::</span> xs<span class="Special">}))</span>
+<span class="LineNr"> 5 </span>
+<span class="LineNr"> 6 </span>
+<span class="LineNr"> 7 </span>
+<span class="LineNr"> 8 </span>
+<span class="LineNr"> 9 </span><span class="Identifier">mapFusion</span> <span class="Statement">:</span> <span class="Special">{</span>a<span class="Special">,</span> b<span class="Special">,</span> c <span class="Statement">:</span> <span class="PreProc">Type</span><span class="Special">}</span>
+<span class="LineNr">10 </span>  <span class="Statement">-&gt;</span> <span class="Special">(</span>f <span class="Statement">:</span> a <span class="Statement">-&gt;</span> b<span class="Special">)</span> <span class="Statement">-&gt;</span> <span class="Special">(</span>g <span class="Statement">:</span> b <span class="Statement">-&gt;</span> c<span class="Special">)</span> <span class="Statement">-&gt;</span> <span class="Special">(</span>xs <span class="Statement">:</span> <span class="PreProc">List</span> a<span class="Special">)</span>
+<span class="LineNr">11 </span>  <span class="Statement">-&gt;</span> map <span class="Special">(</span>g <span class="Statement">.</span> f<span class="Special">)</span> xs <span class="Statement">=</span> map g <span class="Special">(</span>map f xs<span class="Special">)</span>
+<span class="LineNr">12 </span>mapFusion f g <span class="Special">[]</span> <span class="Statement">=</span> <span class="PreProc">refl</span>
+<span class="LineNr">13 </span>mapFusion f g <span class="Special">(</span>x <span class="Statement">::</span> xs<span class="Special">)</span> <span class="Statement">=</span> eqList <span class="PreProc">refl</span> <span class="Special">(</span>mapFusion f g xs<span class="Special">)</span>
+<span class="LineNr">14 </span>
+</pre>
+</div>
+
+<div id="TypeToType" style="display:none;">
+<pre id="vimCodeElement">
+<a name="TypeToTypePrompt"></a>Idris&gt; :s Type -&gt; Type
+= Prelude.Algebra.AbelianGroup : Type -&gt; Type
+Sets equipped with a single binary operation that is associative
+and commutative, along with a neutral element for that binary
+operation and inverses for all elements. Must satisfy the
+following laws:
+
+= Prelude.Algebra.BoundedJoinSemilattice : Type -&gt; Type
+Sets equipped with a binary operation that is commutative,
+associative and idempotent and supplied with a neutral element.
+Must satisfy the following laws:
+
+= Prelude.Algebra.BoundedLattice : Type -&gt; Type
+Sets equipped with two binary operations that are both
+commutative, associative and idempotent and supplied with
+neutral elements, along with absorbtion laws for relating the
+two binary operations. Must satisfy the following:
+
+= Prelude.Algebra.BoundedMeetSemilattice : Type -&gt; Type
+Sets equipped with a binary operation that is commutative,
+associative and idempotent and supplied with a neutral element.
+Must satisfy the following laws:
+
+= Prelude.Basics.Dec : Type -&gt; Type
+Decidability. A decidable property either holds or is a
+contradiction.
+
+= Decidable.Equality.DecEq : Type -&gt; Type
+Decision procedures for propositional equality
+
+= Prelude.Enum : Type -&gt; Type
+
+
+= Prelude.Classes.Eq : Type -&gt; Type
+The Eq class defines inequality and equality.
+
+= Foreign : Type -&gt; Type
+
+
+= Prelude.Algebra.Group : Type -&gt; Type
+Sets equipped with a single binary operation that is
+associative, along with a neutral element for that binary
+operation and inverses for all elements. Must satisfy the
+following laws:
+
+= IO : Type -&gt; Type
+
+
+= Inf : Type -&gt; Type
+Recursive parameters to codata. Inserted automatically by the
+elaborator on a "codata" definition but is necessary by hand if
+mixing inductive and coinductive parameters.
+
+= Prelude.Classes.Integral : Type -&gt; Type
+
+
+= Prelude.Algebra.JoinSemilattice : Type -&gt; Type
+Sets equipped with a binary operation that is commutative,
+associative and idempotent. Must satisfy the following laws:
+
+= Prelude.Algebra.Lattice : Type -&gt; Type
+Sets equipped with two binary operations that are both
+commutative, associative and idempotent, along with absorbtion
+laws for relating the two binary operations. Must satisfy the
+following:
+
+= Lazy : Type -&gt; Type
+Lazily evaluated values. This has special evaluation semantics.
+
+= Prelude.List.List : Type -&gt; Type
+Linked lists
+
+= Prelude.Classes.MaxBound : Type -&gt; Type
+
+
+= Prelude.Maybe.Maybe : Type -&gt; Type
+
+
+= Prelude.Algebra.MeetSemilattice : Type -&gt; Type
+Sets equipped with a binary operation that is commutative,
+associative and idempotent. Must satisfy the following laws:
+
+= Prelude.Classes.MinBound : Type -&gt; Type
+
+
+= Prelude.Algebra.Monoid : Type -&gt; Type
+Sets equipped with a single binary operation that is
+associative, along with a neutral element for that binary
+operation. Must satisfy the following laws:
+
+= Prelude.Basics.Not : Type -&gt; Type
+
+
+= Prelude.Classes.Num : Type -&gt; Type
+The Num class defines basic numerical arithmetic.
+
+= Prelude.Classes.Ord : Type -&gt; Type
+The Ord class defines comparison operations on ordered data
+types.
+
+= PrimIO : Type -&gt; Type
+Idris's primitive IO, for building abstractions on top of
+
+= Prelude.Algebra.Ring : Type -&gt; Type
+Sets equipped with two binary operations, one associative and
+commutative supplied with a neutral element, and the other
+associative, with distributivity laws relating the two
+operations. Must satisfy the following laws:
+
+= Prelude.Algebra.RingWithUnity : Type -&gt; Type
+Sets equipped with two binary operations, one associative and
+commutative supplied with a neutral element, and the other
+associative supplied with a neutral element, with distributivity
+laws relating the two operations. Must satisfy the following
+laws:
+
+= Prelude.Algebra.Semigroup : Type -&gt; Type
+Sets equipped with a single binary operation that is
+associative. Must satisfy the following laws:
+
+= Prelude.Show : Type -&gt; Type
+
+
+= Prelude.Stream.Stream : Type -&gt; Type
+An infinite stream
+
+= Prelude.Uninhabited.Uninhabited : Type -&gt; Type
+A canonical proof that some type is empty
+
+= Prelude.Algebra.VerifiedAbelianGroup : Type -&gt; Type
+
+
+= Prelude.Algebra.VerifiedBoundedJoinSemilattice : Type -&gt; Type
+
+
+= Prelude.Algebra.VerifiedBoundedLattice : Type -&gt; Type
+
+
+= Prelude.Algebra.VerifiedBoundedMeetSemilattice : Type -&gt; Type
+
+
+= Prelude.Algebra.VerifiedGroup : Type -&gt; Type
+
+
+= Prelude.Algebra.VerifiedJoinSemilattice : Type -&gt; Type
+
+
+= Prelude.Algebra.VerifiedLattice : Type -&gt; Type
+
+
+= Prelude.Algebra.VerifiedMeetSemilattice : Type -&gt; Type
+
+
+= Prelude.Algebra.VerifiedMonoid : Type -&gt; Type
+
+
+= Prelude.Algebra.VerifiedRing : Type -&gt; Type
+
+
+= Prelude.Algebra.VerifiedRingWithUnity : Type -&gt; Type
+
+
+= Prelude.Algebra.VerifiedSemigroup : Type -&gt; Type
+
+
+= WorldRes : Type -&gt; Type
+
+
+= (__Elim) : Type -&gt; Type
+Type class for eliminators
+
+&lt; assert_total : a -&gt; a
+Assert to the totality checker than the given expression will
+always terminate.
+
+&lt; Prelude.Basics.id : a -&gt; a
+Identity function.
+
+&lt; Prelude.Basics.the : (a : Type) -&gt; a -&gt; a
+Manually assign a type to an expression.
+
+&lt; trace_malloc : a -&gt; a
+
+
+</pre>
+</div>
+
+<div id="SortList" style="display:none;">
+<pre id="vimCodeElement">
+<a name="SortListPrompt"></a>
+Idris&gt; :s Ord a =&gt; List a -&gt; List a
+= Prelude.List.sort : Ord a =&gt; List a -&gt; List a
+
+
+&lt; Prelude.List.reverse : List a -&gt; List a
+Return the elements of a list in reverse order.
+
+&lt; Prelude.List.nub : Eq a =&gt; List a -&gt; List a
+
+
+&lt; assert_total : a -&gt; a
+Assert to the totality checker than the given expression will
+always terminate.
+
+&lt; Prelude.Basics.id : a -&gt; a
+Identity function.
+
+&lt; Prelude.Basics.the : (a : Type) -&gt; a -&gt; a
+Manually assign a type to an expression.
+
+&lt; trace_malloc : a -&gt; a
+
+
+&lt; Prelude.List.toList : Foldable t =&gt; t a -&gt; List a
+Convert any Foldable structure to a list.
+
+</pre>
+</div>
+
+<div id="PlusCommutative" style="display:none;">
+<pre id="vimCodeElement">
+<a name="PlusCommutativePrompt"></a>
+Idris&gt; :s plus x y = plus y x
+= Prelude.Nat.plusCommutative : (left : Nat) -&gt;
+                                (right : Nat) -&gt; left + right = right + left
+
+
+&gt; Prelude.Nat.multOneLeftNeutral : (right : Nat) -&gt;
+                                   fromInteger 1 * right = right
+
+
+&gt; Prelude.Nat.plusZeroRightNeutral : (left : Nat) -&gt;
+                                     left + fromInteger 0 = left
+
+Idris&gt; :t plus
+Prelude.Nat.plus : Nat -&gt; Nat -&gt; Nat
+Idris&gt; :t the Nat 3
+the Nat (fromInteger 3) : Nat
+Idris&gt; the Nat 3 + 5
+8 : Nat
+
+</pre>
+</div>
+
+<div id="Vect" style="display:none;">
+<pre id="vimCodeElement">
+<a name="VectPrompt"></a>
+Idris&gt; :t Vect
+Prelude.Vect.Vect : Nat -&gt; Type -&gt; Type
+Idris&gt; :t (++)
+Prelude.List.(++) : List a -&gt; List a -&gt; List a
+Prelude.Strings.(++) : String -&gt; String -&gt; String
+Prelude.Vect.(++) : Vect m a -&gt; Vect n a -&gt; Vect (m + n) a
+Idris&gt; :t Either
+Prelude.Either.Either : Type -&gt; Type -&gt; Type
+Idris&gt; :t head
+Prelude.List.head : (l : List a) -&gt; (isCons l = True) -&gt; a
+Prelude.Stream.head : Stream a -&gt; a
+Prelude.Vect.head : Vect (S n) a -&gt; a
+Idris&gt; :s Vect (S n) a -&gt; a
+= Prelude.Vect.head : Vect (S n) a -&gt; a
+Only the first element of the vector
+
+= Prelude.Vect.last : Vect (S n) a -&gt; a
+The last element of the vector
+
+</pre>
+</div>
+
+
+<div id="FunSearches" style="display:none;">
+<pre id="vimCodeElement">
+<a name="FunSearchesPrompt"></a>
+Idris&gt; :s Functor f =&gt; f a -&gt; f b -&gt; f (a, b)
+&gt; Prelude.Vect.zip : Vect n a -&gt; Vect n b -&gt; Vect n (a, b)
+Combine two equal-length vectors pairwise
+
+&gt; Prelude.Stream.zip : Stream a -&gt; Stream b -&gt; Stream (a, b)
+Create a stream of pairs from two streams
+
+Idris&gt; :s (m, n : Nat) -&gt; m + n = n + m
+= Prelude.Nat.plusCommutative : (left : Nat) -&gt;
+                                (right : Nat) -&gt; left + right = right + left
+
+
+&gt; Prelude.Nat.multOneLeftNeutral : (right : Nat) -&gt;
+                                   fromInteger 1 * right = right
+
+
+&gt; Prelude.Nat.plusZeroRightNeutral : (left : Nat) -&gt;
+                                     left + fromInteger 0 = left
+
+
+<a name="OrdSearch"></a>Idris&gt; :s Ord a =&gt; a -&gt; a -&gt; Bool
+= Prelude.Classes.(&lt;) : Ord a =&gt; a -&gt; a -&gt; Bool
+
+
+= Prelude.Classes.(&lt;=) : Ord a =&gt; a -&gt; a -&gt; Bool
+
+
+= Prelude.Classes.(&gt;) : Ord a =&gt; a -&gt; a -&gt; Bool
+
+
+= Prelude.Classes.(&gt;=) : Ord a =&gt; a -&gt; a -&gt; Bool
+
+
+&lt; Prelude.Classes.(/=) : Eq a =&gt; a -&gt; a -&gt; Bool
+
+
+&lt; Prelude.Classes.(==) : Eq a =&gt; a -&gt; a -&gt; Bool
+
+
+&gt; Prelude.Nat.gt : Nat -&gt; Nat -&gt; Bool
+Boolean test than one Nat is strictly greater than another
+
+&gt; Prelude.Nat.gte : Nat -&gt; Nat -&gt; Bool
+Boolean test than one Nat is greater than or equal to another
+
+&gt; Prelude.Strings.isInfixOf : String -&gt; String -&gt; Bool
+
+
+&gt; Prelude.Strings.isPrefixOf : String -&gt; String -&gt; Bool
+
+
+&gt; Prelude.Strings.isSuffixOf : String -&gt; String -&gt; Bool
+
+
+&gt; Prelude.Nat.lt : Nat -&gt; Nat -&gt; Bool
+Boolean test than one Nat is strictly less than another
+
+&gt; Prelude.Nat.lte : Nat -&gt; Nat -&gt; Bool
+Boolean test than one Nat is less than or equal to another
+
+Idris&gt; :s fact 5 = the Nat 100
+Idris&gt; :s fact 5 = the Nat 120
+&lt; Prelude.Nat.maximumZeroNRight : (right : Nat) -&gt;
+                                  maximum 0 right = right
+
+
+&lt; Prelude.Nat.plusOneSucc : (right : Nat) -&gt;
+                            fromInteger 1 + right = S right
+
+
+&lt; Prelude.Nat.plusZeroLeftNeutral : (right : Nat) -&gt;
+                                    fromInteger 0 + right = right
+
+
+&lt; Prelude.Nat.predSucc : (n : Nat) -&gt; pred (S n) = n
+
+
+&lt; refl : x = x
+A proof that x in fact equals x. To construct this, you must
+have already shown that both sides are in fact equal.
+
+
+</pre>
+</div>
+
+<div id="OrdAB" style="display:none;">
+<pre id="vimCodeElement">
+<a name="OrdABPrompt"></a>
+Idris&gt; :s (Ord a, Ord b) =&gt; (a, b) -&gt; (a, b) -&gt; Bool
+&lt; Prelude.Classes.(&lt;) : Ord a =&gt; a -&gt; a -&gt; Bool
+
+
+&lt; Prelude.Classes.(&lt;=) : Ord a =&gt; a -&gt; a -&gt; Bool
+
+
+&lt; Prelude.Classes.(&gt;) : Ord a =&gt; a -&gt; a -&gt; Bool
+
+
+&lt; Prelude.Classes.(&gt;=) : Ord a =&gt; a -&gt; a -&gt; Bool
+
+
+&lt; Prelude.Classes.(/=) : Eq a =&gt; a -&gt; a -&gt; Bool
+
+
+&lt; Prelude.Classes.(==) : Eq a =&gt; a -&gt; a -&gt; Bool
+
+
+</pre>
+</div>
+
+
+
+<embed id="pdf2" src="slides/type-search.1.pdf" width="640" height="480" style="display: none;">
+
+</div>
+
+<p style="text-align: center;" class="spaced"><a href="slides/type-search.pdf">View slides in full (PDF)</a>.</p>
+
+</body>
+</html>
